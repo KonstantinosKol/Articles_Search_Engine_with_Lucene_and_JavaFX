@@ -25,7 +25,7 @@ public class LuceneTester {
         indexer = new Indexer(indexDir);
         int numIndexed;
         long startTime = System.currentTimeMillis();
-        numIndexed = indexer.createIndex(dataDir,new TextFileFilter());
+        numIndexed = indexer.createIndex(dataDir, new TextFileFilter());
         long endTime = System.currentTimeMillis();
         indexer.close();
         System.out.println(numIndexed+" File(s) indexed, time taken: " + (endTime-startTime)+" ms");
