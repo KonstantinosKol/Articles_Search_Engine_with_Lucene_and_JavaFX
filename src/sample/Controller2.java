@@ -20,22 +20,22 @@ public class Controller2 {
 
     private String choosenFile="";
 
-    public  void fillPlaces(String tmp,String choosenFile) {
+    public  void fillPlaces(String tmp, String choosenFile) {
         PlacesText.setText(tmp);
         this.choosenFile = choosenFile;
     }
 
-    public  void fillPeople(String tmp,String choosenFile) {
+    public  void fillPeople(String tmp, String choosenFile) {
         PeopleText.setText(tmp);
         this.choosenFile = choosenFile;
     }
 
-    public  void fillTitle(String tmp,String choosenFile) {
+    public  void fillTitle(String tmp, String choosenFile) {
         TitleText.setText(tmp);
         this.choosenFile = choosenFile;
     }
 
-    public  void fillBody(String tmp,String choosenFile) {
+    public  void fillBody(String tmp, String choosenFile) {
         BodyText.setText(tmp);
         this.choosenFile = choosenFile;
     }
@@ -45,6 +45,7 @@ public class Controller2 {
         try {
 
             LuceneTester.deleteFile(choosenFile);
+            System.out.println("Delete2===>"+choosenFile);
 
             File newFile = new File(choosenFile);
             BufferedWriter bw = new BufferedWriter(new FileWriter(newFile));
@@ -52,12 +53,12 @@ public class Controller2 {
             bw.write("<PEOPLE>" + PeopleText.getText() + "</PEOPLE>\n");
             bw.write("<TITLE>" + TitleText.getText() + "</TITLE>\n");
             bw.write("<BODY>" + BodyText.getText() + "\u0003</BODY>\n");
-
-            LuceneTester.addFile(choosenFile);
             bw.close();
 
+            LuceneTester.addFile(choosenFile);
+
             Stage stage;
-            stage=(Stage)BodyText.getScene().getWindow();
+            stage = (Stage)BodyText.getScene().getWindow();
             stage.close();
         }
         catch(Exception e) {

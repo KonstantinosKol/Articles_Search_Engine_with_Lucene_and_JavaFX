@@ -1,9 +1,8 @@
 package sample;
 
-import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.LowerCaseFilter;
-import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
+import org.apache.lucene.analysis.en.EnglishAnalyzer;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.CorruptIndexException;
@@ -15,9 +14,9 @@ import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.tartarus.snowball.ext.EnglishStemmer;
 
 import java.io.IOException;
-import java.io.StringReader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -59,50 +58,43 @@ public class Searcher {
 
         for (int i=0; i<fields.size(); i++) {
             finalString[i] = fields.get(i);
-            System.out.println(fields.get(i));
         }
 
-        queryParser = new MultiFieldQueryParser(finalString, new WhitespaceAnalyzer());
+        queryParser = new MultiFieldQueryParser(finalString, new  StandardAnalyzer(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET));
+        if (Controller3.searchRelatedFlag) {
+            queryParser.setDefaultOperator(QueryParser.Operator.OR);
+        }
     }
 
     public TopDocs search(String searchQuery, int TopK) throws IOException, ParseException {
-        String tmp = "";
-        try {
-            Analyzer analyzer = new WhitespaceAnalyzer();
-            TokenStream tokenStream = analyzer.tokenStream("contents", new StringReader(searchQuery));
-            tokenStream = new LowerCaseFilter(tokenStream);
-            CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
+
+        //Support phrases
+        if (searchQuery.contains("\"")) {
+            TokenStream tokenStream = new  StandardAnalyzer(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET).tokenStream("contents", searchQuery);
             tokenStream.reset();
+
+            String tmp = "\"";
             while (tokenStream.incrementToken()) {
-                if(term.toString().equals("and")) {
-                    tmp = tmp + " AND";
-                }
-                else if(term.toString().equals("or")) {
-                    tmp = tmp + " OR";
-                }
-                else if(term.toString().equals("not")) {
-                    tmp = tmp + " NOT";
-                }
-                else {
-                    if (tmp.equals("")) {
-                        tmp = tmp + term.toString();
-                    }
-                    else {
-                        tmp = tmp + " " + term.toString();
-                    }
-                }
+                CharTermAttribute charTermAttribute = tokenStream.getAttribute(CharTermAttribute.class);
+                EnglishStemmer stemmer = new EnglishStemmer();
+                stemmer.setCurrent(charTermAttribute.toString());
+                stemmer.stem();
+                tmp = tmp  + stemmer.getCurrent() + " ";
             }
+            tmp = tmp + "\"";
+            tokenStream.end();
             tokenStream.close();
-            analyzer.close();
+
+            query = queryParser.parse(tmp);
         }
-        catch (IOException e) {
-            e.printStackTrace();
+        else {
+            query = queryParser.parse(searchQuery);
         }
 
-        query = queryParser.parse(tmp);
         //Vector space model
         query.createWeight(indexSearcher, ScoreMode.COMPLETE, 0.5f);
-        System.out.println("query: "+ query.toString());
+
+        System.out.println("query: " + query.toString());
         return indexSearcher.search(query, TopK);
     }
 

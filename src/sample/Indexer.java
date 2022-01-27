@@ -2,7 +2,7 @@ package sample;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
+import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.document.Document;
@@ -32,12 +32,10 @@ public class Indexer {
         if(!Files.exists(indexPath)) {
             Files.createDirectory(indexPath);
         }
-        //Path indexPath = Files.createTempDirectory(indexDirectoryPath);
         Directory indexDirectory = FSDirectory.open(indexPath);
         //create the indexer
         IndexWriterConfig config = new IndexWriterConfig(new StandardAnalyzer());
 
-        //config.setOpenMode( IndexWriterConfig.OpenMode.CREATE );                    //Overriding the original index in the folder
         writer = new IndexWriter(indexDirectory, config);
     }
     public void close() throws CorruptIndexException, IOException {
@@ -52,33 +50,32 @@ public class Indexer {
         int lineCounter = 0;
 
         while ((currentLine = br.readLine()) != null) {
-
-            currentLine = currentLine.toString();
-
-            //System.out.println("Current===>"+currentLine);
-
             //Tags Removal
             //Supposing that <PLACES></PLACES>, <PEOPLE></PEOPLE>, <TITLE></TITLE> are one line each
             //First line in txt (<PLACES></PLACES>)
             if(lineCounter == 0) {
-                currentLine = currentLine.substring(7,currentLine.length()-9);
+                currentLine = currentLine.replaceAll("<PLACES>", "");
+                currentLine = currentLine.replaceAll("</PLACES>", "");
             }
             //Second line in txt (<PEOPLE></PEOPLE>)
             else if(lineCounter == 1) {
-                currentLine = currentLine.substring(7,currentLine.length()-9);
+                currentLine = currentLine.replaceAll("<PEOPLE>", "");
+                currentLine = currentLine.replaceAll("</PEOPLE>", "");
             }
             //Third line in txt (<TITLE></TITLE>)
             else if(lineCounter == 2) {
-                currentLine = currentLine.substring(6,currentLine.length()-8);
+                currentLine = currentLine.replaceAll("<TITLE>", "");
+                currentLine = currentLine.replaceAll("</TITLE>", "");
             }
             //Fourth line in txt (<BODY></BODY>)
             else if(lineCounter == 3 && currentLine.contains("</BODY>")) {
-                currentLine = currentLine.substring(5,currentLine.length()-7);
+                currentLine = currentLine.replaceAll("<BODY>", "");
+                currentLine = currentLine.replaceAll("</BODY>", "");
                 break;
             }
             //Last line in txt (<BODY>)
             else if (lineCounter == 3 && !currentLine.contains("</BODY>")) {
-                currentLine = currentLine.substring(5);
+                currentLine = currentLine.replaceAll("<BODY>", "");
             }
             //Last line in txt (</BODY>)
             else if (currentLine.contains("\u0003</BODY>")) {
@@ -92,37 +89,45 @@ public class Indexer {
             //Leave dates, time, words adn decimal number intact
             currentLine = currentLine.replaceAll("([^0-9a-zA-Z]*[\\.,][^0-9a-zA-Z>]+)|([^0-9a-zA-Z\\n]+[\\.,][^0-9a-zA-Z]*)", " ");
             currentLine = currentLine.replaceAll("([~!@#$%^&*()_+={}\\[\\]\\;\\'\\\"\\<\\>\\|\\?]*)", "");
+            //Match supported dates and times
             //Date
             currentLine = currentLine.replaceAll("/", ";");
             //Time
-            currentLine = currentLine.replaceAll(":", ";");
+            currentLine = currentLine.replaceAll(":", "ω");
 
-            System.out.println("Current===>"+currentLine);
+            System.out.println("Current ===> " + currentLine);
 
             //Case Folding
             currentLine = currentLine.toLowerCase();
 
+            System.out.print("After tokenization ===> ");
+
             //Stopwords Removal from body and tokenization at body
-            System.out.print("After tokenization ==>> ");
-            if (lineCounter > 2) {         //-----------> <BODY>
+            if (lineCounter > 2) {
                 try {
-                    //CharArraySet enStopSet = EnglishAnalyzer.ENGLISH_STOP_WORDS_SET;
-                    //stopSet.addAll(enStopSet);
-                    Analyzer analyzer = new WhitespaceAnalyzer();
+                    Analyzer analyzer = new StandardAnalyzer(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET);
                     TokenStream tokenStream = analyzer.tokenStream(LuceneConstants.BODY, new StringReader(currentLine));
+                    //tokenStream = new LowerCaseFilter(tokenStream);
                     CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
                     tokenStream.reset();
+
                     while(tokenStream.incrementToken()) {
+                        String tmpTerm = term.toString();
+                        //Fixing all misplaced 'ω'
+                        if (!tmpTerm.matches("([0-9]+ω[0-9]+ω[0-9]+)|([0-9]+;[0-9]+;[0-9]+)")) {
+                            tmpTerm = tmpTerm.replace("ω", "");
+                            tmpTerm = tmpTerm.replace(";", "");
+                        }
 
                         //Stemming in body
                         EnglishStemmer stemmer = new EnglishStemmer();
-                        stemmer.setCurrent(term.toString());
+                        stemmer.setCurrent(tmpTerm);
                         stemmer.stem();
                         String tmp = stemmer.getCurrent();
 
                         System.out.print("[" + tmp + "] ");
 
-                        if(term.toString() != "") {
+                        if(tmpTerm != "") {
 
                             //index file contents
                             Field bodyField = new Field(LuceneConstants.BODY, tmp, TextField.TYPE_STORED);
@@ -137,6 +142,8 @@ public class Indexer {
                             document.add(filePathField);
                         }
                     }
+                    System.out.println();
+                    System.out.println();
                     tokenStream.close();
                     analyzer.close();
                 }
@@ -171,9 +178,6 @@ public class Indexer {
                     document.add(filePathField);
                 }
             }
-
-            System.out.println();
-
             lineCounter++;
         }
 
@@ -184,17 +188,11 @@ public class Indexer {
         System.out.println("Indexing: " + file.getCanonicalPath());
         updateDocument(file);
     }
-    public int createIndex(String dataDirPath, FileFilter filter) throws
-            IOException {
+    public int createIndex(String dataDirPath, FileFilter filter) throws IOException {
         //get all files in the data directory
         File[] files = new File(dataDirPath).listFiles();
         for (File file : files) {
-            if(!file.isDirectory()
-                    && !file.isHidden()
-                    && file.exists()
-                    && file.canRead()
-                    && filter.accept(file)
-            ){
+            if(!file.isDirectory() && !file.isHidden() && file.exists() && file.canRead() && filter.accept(file)) {
                 indexFile(file);
             }
         }

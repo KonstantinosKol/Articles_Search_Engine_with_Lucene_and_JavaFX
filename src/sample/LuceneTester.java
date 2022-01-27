@@ -2,10 +2,11 @@ package sample;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.scene.control.Label;
+import javafx.scene.layout.VBox;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.LowerCaseFilter;
-import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
+import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.queryparser.classic.ParseException;
@@ -34,7 +35,7 @@ public class LuceneTester {
         numIndexed = indexer.createIndex(dataDir, new TextFileFilter());
         long endTime = System.currentTimeMillis();
         indexer.close();
-        System.out.println(numIndexed+" File(s) indexed, time taken: " + (endTime-startTime)+" ms");
+        System.out.println(numIndexed + " File(s) indexed, time taken: " + (endTime-startTime)+" ms");
     }
 
     public ObservableList search(String searchQuery, int TopK) throws IOException, ParseException {
@@ -43,32 +44,41 @@ public class LuceneTester {
         TopDocs hits = searcher.search(searchQuery, TopK);
         long endTime = System.currentTimeMillis();
 
+        //Score calculation
         ScoreDoc[] filterScoreDocsArray = hits.scoreDocs;
         for (int i = 0; i < filterScoreDocsArray.length; ++i) {
             Document d = searcher.getDocument(filterScoreDocsArray[i]);
-            System.out.println((i + 1) + ". Score: " + filterScoreDocsArray[i].score);
+            //System.out.println((i + 1) + ". Score: " + filterScoreDocsArray[i].score);
         }
 
         ObservableList observableList = FXCollections.observableArrayList();
 
-        System.out.println(hits.totalHits +" documents found. Time :" + (endTime - startTime));
+        System.out.println(hits.totalHits + " found. Time: " + (endTime - startTime));
 
-        Analyzer analyzer = new WhitespaceAnalyzer();
+        Analyzer analyzer = new EnglishAnalyzer(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET);
         TokenStream tokenStream = analyzer.tokenStream("contents", new StringReader(searchQuery));
-        tokenStream = new LowerCaseFilter(tokenStream);
         CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
         tokenStream.reset();
-        List<String> termsArrayList= new ArrayList<>();
+        List<String> termsArrayList = new ArrayList<>();
+
         while (tokenStream.incrementToken()) {
-            termsArrayList.add(term.toString());
+            if (term.toString().contains("ω")) {
+                termsArrayList.add(term.toString().replace("ω",":"));
+            }
+            else if (term.toString().contains(";")) {
+                termsArrayList.add(term.toString().replace(";","/"));
+            }
+            else if (term.toString().contains("\"")) {
+                termsArrayList.add(term.toString().replace("\"",""));
+            }
+            else {
+                termsArrayList.add(term.toString());
+            }
         }
         tokenStream.close();
         analyzer.close();
 
-
-        Controller controller = new Controller();
-
-        int k=0;
+        int k = 0;
         for(ScoreDoc scoreDoc : hits.scoreDocs) {
 
             Document doc = searcher.getDocument(scoreDoc);
@@ -81,64 +91,80 @@ public class LuceneTester {
             tokenStream.reset();
             String contents = "";
 
-            observableList.add(doc.get(LuceneConstants.FILE_PATH));
+            int kofths = 0;
+
+            Label title = new Label();
 
             while ((currentLine = br.readLine()) != null) {
                 //Print the title line in which term exists
                 if (lineCounter == 2) {
                     currentLine = currentLine.replaceAll("<TITLE>", "");
                     currentLine = currentLine.replaceAll("</TITLE>", "");
-                    //contents = currentLine + "\n";
-                    observableList.add("(" + filterScoreDocsArray[k].score + ") " + currentLine);
+                    title.setText("[" + filterScoreDocsArray[k].score + "] "+currentLine);
+                    kofths++;
                 }
                 //Else print the body line in which term exists
                 else if (lineCounter > 2) {
                     for (int i=0; i<termsArrayList.size(); i++) {
-                        if (!termsArrayList.get(i).equals("AND") && !termsArrayList.get(i).equals("OR") && !termsArrayList.get(i).equals("NOT")) {
-                            //If current line contains any of the query terms
-                            if (currentLine.contains(termsArrayList.get(i))) {
+                        //If current line contains any of the query terms
+                        if (currentLine.toLowerCase().contains(termsArrayList.get(i))) {
+                            //Remove tags
+                            currentLine = currentLine.replaceAll("<BODY>", "");
+                            currentLine = currentLine.replaceAll("\u0003</BODY>", "");
+                            currentLine = currentLine.replaceAll("</TITLE>", "");
+                            contents = contents + currentLine + "\n";
+                            kofths++;
+                            break;
+                        }
+                        //Else print the first line of the article
+                        else {
+                            if (lineCounter == 3) {
                                 //Remove tags
                                 currentLine = currentLine.replaceAll("<BODY>", "");
                                 currentLine = currentLine.replaceAll("\u0003</BODY>", "");
+                                currentLine = currentLine.replaceAll("</TITLE>", "");
                                 contents = contents + currentLine + "\n";
-
-                            }
-                            //Else print the first line of the article
-                            else {
-                                if (lineCounter == 3) {
-                                    //Remove tags
-                                    currentLine = currentLine.replaceAll("<BODY>", "");
-                                    currentLine = currentLine.replaceAll("\u0003</BODY>", "");
-                                    contents = contents + currentLine + "\n";
-                                }
+                                kofths++;
+                                break;
                             }
                         }
                     }
-
-
                 }
                 lineCounter ++;
-            }//>>>end while read file
+                if (kofths==5) {
+                    break;
+                }
+            }
             br.close();
-            observableList.add(contents);
-            observableList.add("");
+            Label body = new Label(contents);
+            Label path = new Label(doc.get(LuceneConstants.FILE_PATH));
+            path.setVisible(false);
+            title.setStyle("-fx-text-fill: blue; -fx-font: normal bold 15px 'arial'");
+            VBox vBox = new VBox(title,body,path);
+
+            observableList.add(vBox);
             k++;
-        }//>>>end FOR
-
-
+        }
         searcher.close();
         return  observableList;
     }
 
     public static void deleteFile(String str) throws IOException {
-        indexer = new Indexer(indexDir);
-        File file = new File(str);
-        if(file.delete()) {
-            indexer.deleteDocument(file);
-            System.out.println("File: " + str + " deleted successfully");
+        try {
+            indexer = new Indexer(indexDir);
+            File file = new File(str);
+            if(file.exists()) {
+                file.delete();
+                indexer.deleteDocument(file);
+                System.out.println("==================Delete=====================");
+                System.out.println("File: " + str + " deleted successfully");
+            }
+            else {
+                System.out.println("Failed to delete the file: " + str);
+            }
         }
-        else {
-            System.out.println("Failed to delete the file" + str);
+        catch (Exception e) {
+            System.out.println("Exception while deleting file: " + e.getMessage());
         }
         indexer.close();
     }
@@ -151,15 +177,18 @@ public class LuceneTester {
             Path result = null;
             result = Files.copy(Paths.get(src), Paths.get("res/Data/" + fileName));
             if(result != null) {
+                System.out.println("==================Add=====================");
                 System.out.println("File added successfully.");
                 indexer = new Indexer(indexDir);
                 File file = new File("res/Data/" + fileName);
                 indexer.addDocument(file);
-            }else {
+                indexer.close();
+            }
+            else {
                 System.out.println("File addition failed.");
             }
-            indexer.close();
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             System.out.println("Exception while adding file: " + e.getMessage());
         }
     }

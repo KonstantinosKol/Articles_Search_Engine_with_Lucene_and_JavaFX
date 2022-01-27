@@ -5,14 +5,19 @@ import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
+import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Callback;
-import org.apache.lucene.queryparser.classic.ParseException;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.tartarus.snowball.ext.EnglishStemmer;
 
 import java.io.BufferedReader;
@@ -23,10 +28,10 @@ import java.util.List;
 
 public class Controller {
 
-    ObservableList observableList = FXCollections.observableArrayList();
+    public ObservableList observableList = FXCollections.observableArrayList();
 
     @FXML
-    public ListView<String> ListView;
+    public ListView<VBox> ListView;
 
     @FXML
     private TextField SearchText;
@@ -48,57 +53,70 @@ public class Controller {
     public static int intTopK = 0;
 
 
-    public void clickableFields() throws Exception {
-        ListView.setCellFactory(new Callback<ListView<String>, ListCell<String>>() {
-            @Override
-            public ListCell<String> call(ListView<String> param) {
-                return new ListCell<String>() {
-                    @Override
-                    protected void updateItem(String item, boolean empty) {
-                        super.updateItem(item, empty);
-
-                        if (item == null || empty) {
-                            setText(null);
-                            setStyle("-fx-control-inner-background: white ;");
-                        }
-                        else {
-                            if (getIndex() % 4 == 0) {
-                                setText(item);
-                                setMouseTransparent(false);
-                                setStyle("-fx-text-fill: blue; -fx-font: normal bold 20px 'serif'");
-                            }
-                            else if (getIndex() % 4 == 1) {
-                                setText(item);
-                                setStyle("-fx-text-fill: green;");
-                                setMouseTransparent(true);
-                            }
-                            else {
-                                setText(item);
-                                setMouseTransparent(true);
-                                setStyle("");
-                            }
-
-                        }
-                    }
-                };
-            }
-        });
-    }
+//    public void clickableFields() throws Exception {
+//        ListView.setCellFactory(new Callback<ListView<String>, ListCell<String>>() {
+//            @Override
+//            public ListCell<String> call(ListView<String> param) {
+//                return new ListCell<String>() {
+//                    @Override
+//                    protected void updateItem(String item, boolean empty) {
+//                        super.updateItem(item, empty);
+//
+//                        if (item == null || empty) {
+//                            setText(null);
+//                            setStyle("-fx-control-inner-background: white ;");
+//                        }
+//                        else {
+//                            if (getIndex() % 4 == 0) {
+//                                setText(item);
+//                                setMouseTransparent(false);
+//                                setStyle("-fx-text-fill: blue; -fx-font: normal bold 20px 'serif'");
+//                            }
+//                            else if (getIndex() % 4 == 1) {
+//                                setText(item);
+//                                setStyle("-fx-text-fill: green;");
+//                                setMouseTransparent(true);
+//                            }
+//                            else {
+//                                setText(item);
+//                                setMouseTransparent(true);
+//                                setStyle("");
+//                            }
+//
+//                        }
+//                    }
+//                };
+//            }
+//        });
+//    }
 
     @FXML
     public void openResultPopUp(javafx.scene.input.MouseEvent mouseEvent) {
-        String selected = ListView.getSelectionModel().getSelectedItem();
-        String choosenFile = selected;
+//        String selected = ListView.getSelectionModel().getSelectedItem();
+
+        Group group = new Group();
+        VBox vBox = ListView.getSelectionModel().getSelectedItem();
+
+
+
+        // group.getChildren().add(vBox);   ///////
+
+        Node nodeOut = vBox.getChildren().get(2);
+
+        String choosenFile = ((Label)nodeOut).getText();
+
+
         try {
             if (choosenFile != null) {
-                DisplayArticles("ArticlePopup.fxml", choosenFile);
+
+                DisplayArticles2("ArticlePopup.fxml", choosenFile);
             }
             else {
                 System.out.println("Please click on the article path.");
             }
         }
         catch(Exception e) {
-            System.out.println("An error has occurred while editing the file!");
+            System.out.println("An error has occurred while opening the file!");
         }
     }
 
@@ -116,6 +134,7 @@ public class Controller {
             Parent root = loader.load();
             Stage stage = new Stage();
             stage.setScene(new Scene(root));
+            stage.initOwner(Main.primaryStage);
             stage.show();
         }
         catch (IOException e){
@@ -125,28 +144,92 @@ public class Controller {
 
     @FXML
     public void Check(ActionEvent event) {
+        //Check selected tag
+        if (Places.isSelected()) {
+            varPlaces = true;
+        } else {
+            varPlaces = false;
+        }
+        if (People.isSelected()) {
+            varPeople = true;
+        } else {
+            varPeople = false;
+        }
+        if (Title.isSelected()) {
+            varTitle = true;
+        } else {
+            varTitle = false;
+        }
+        if (Body.isSelected()) {
+            varBody = true;
+        } else {
+            varBody = false;
+        }
+    }
+
+    @FXML
+    public void Search(ActionEvent event) throws IOException {
 
         if (Places.isSelected() || People.isSelected() || Title.isSelected() || Body.isSelected()) {
-            //Check selected tag
-            if (Places.isSelected()) {
-                varPlaces = true;
-            } else {
-                varPlaces = false;
+            //Check if search is empty
+            LuceneTester LuceneTester;
+            try {
+                String query = "";
+                query = SearchText.getText();
+
+                //Remove '?' from query
+                query = query.replace("?", "");
+
+                //Check if top-k is empty
+                if (TopK.getText().matches("^[0-9]+$")) {
+                    ListView.getItems().clear();
+
+                    intTopK = Integer.parseInt(TopK.getText());
+
+                    LuceneTester = new LuceneTester();
+
+                    TokenStream tokenStream = new WhitespaceAnalyzer().tokenStream("contents", query);
+                    //tokenStream = new LowerCaseFilter(tokenStream);
+                    CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
+                    tokenStream.reset();
+
+                    String tmp = "";
+                    while (tokenStream.incrementToken()) {
+                        //Stemmer receives word by word a line
+                        EnglishStemmer stemmer = new EnglishStemmer();
+                        stemmer.setCurrent(term.toString());
+                        stemmer.stem();
+                        tmp = tmp + stemmer.getCurrent() + " ";
+                    }
+
+                    //Date
+                    if (tmp.contains("/")) {
+                        tmp = tmp.replaceAll("/", ";");
+                    }
+                    //Time
+                    if (tmp.contains(":")) {
+                        tmp = tmp.replaceAll(":", "ω");
+                    }
+
+                    System.out.println("stemQuery==>"+tmp);
+
+                    observableList = LuceneTester.search(tmp, intTopK);
+                    ListView.getItems().addAll(observableList);
+                    ListView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+
+                }
+                else {
+                    Alert a = new Alert(Alert.AlertType.ERROR);
+                    a.setTitle("Error");
+                    a.setContentText("Please give an integer in \"Top-k results\" field.");
+                    a.showAndWait();
+                }
             }
-            if (People.isSelected()) {
-                varPeople = true;
-            } else {
-                varPeople = false;
-            }
-            if (Title.isSelected()) {
-                varTitle = true;
-            } else {
-                varTitle = false;
-            }
-            if (Body.isSelected()) {
-                varBody = true;
-            } else {
-                varBody = false;
+            catch (Exception e) {
+                Alert a = new Alert(Alert.AlertType.ERROR);
+                a.setTitle("Error");
+                a.setContentText("Please give a supported query (find supported queries at \"Help\").");
+                a.showAndWait();
             }
         }
         else {
@@ -155,78 +238,6 @@ public class Controller {
             a.setContentText("Please select one of more fields to search.");
             a.showAndWait();
         }
-
-    }
-
-    @FXML
-    public void Search(ActionEvent event) {
-        ListView.getItems().clear();
-        if (TopK.getText().matches("^[0-9]+$")) {
-
-            intTopK = Integer.parseInt(TopK.getText());
-
-            LuceneTester LuceneTester;
-            try {
-
-                String query = "";
-
-                //Problem when query has more than 2 words "billion national" ------> "billion n"
-                //Stemmer receives word by word a phrase
-                if((SearchText.getText().contains(" ") && SearchText.getLength()>1)) {
-                    query = SearchText.getText() + " ";
-                }
-                else {
-                    query = SearchText.getText();
-                }
-
-                if (SearchText.getText().matches("([\"]?[0-9a-zA-Z ]+[-.,:\\/][0-9a-zA-Z]+[-.,:\\/][0-9a-zA-Z ]+[\"]?)|([\"]?[0-9a-zA-Z ]+[-.,:\\/][0-9a-zA-Z ]+[\"]?)|([\"]?[0-9a-zA-Z ]+[\"]?)")) {
-                    LuceneTester = new LuceneTester();
-                    EnglishStemmer stemmer = new EnglishStemmer();
-                    stemmer.setCurrent(query);
-                    stemmer.stem();
-                    String tmp = stemmer.getCurrent();
-
-                    //Date
-                    if (tmp.contains("/")) {
-                        tmp = tmp.replaceAll("/", ";");
-                    }
-                    //Time
-                    if (tmp.contains(":")) {
-                        tmp = tmp.replaceAll(":", ";");
-                    }
-
-                    System.out.println("stemQuery==>"+tmp);
-
-                    observableList = LuceneTester.search(tmp, intTopK);
-                    ListView.getItems().addAll(observableList);
-                    ListView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-                    clickableFields();
-                }
-                else {
-                    Alert a = new Alert(Alert.AlertType.ERROR);
-                    a.setTitle("Error");
-                    a.setContentText("Please give a supported query (find supported queries at \"Help\").");
-                    a.showAndWait();
-                }
-            }
-            catch (IOException e) {
-                e.printStackTrace();
-            }
-            catch (ParseException e) {
-                e.printStackTrace();
-            }
-            catch (Exception e) {
-                e.printStackTrace();
-            }
-
-        }
-        else {
-            Alert a = new Alert(Alert.AlertType.ERROR);
-            a.setTitle("Error");
-            a.setContentText("Please give an integer in \"Top-k results\" field.");
-            a.showAndWait();
-        }
-
     }
 
     @FXML
@@ -290,7 +301,7 @@ public class Controller {
             if (selectedFile != null) {
                 String choosenFile = selectedFile.getPath();
                 try {
-                    DisplayArticles("EditFilePopup.fxml", choosenFile);
+                    DisplayArticles1("EditFilePopup.fxml", choosenFile);
                 }
                 catch(Exception e) {
                     System.out.println("An error has occurred while editing the file!");
@@ -306,7 +317,8 @@ public class Controller {
         }
     }
 
-    public void DisplayArticles(String fmxl, String choosenFile) throws IOException {
+    public void DisplayArticles1(String fmxl, String choosenFile) throws IOException {
+
         File file = new File(choosenFile);
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource(fmxl));
@@ -327,22 +339,26 @@ public class Controller {
             //Supposing that <PLACES></PLACES>, <PEOPLE></PEOPLE>, <TITLE></TITLE> are one line each
             //First line in txt (<PLACES></PLACES>)
             if(lineCounter == 0) {
-                currentLine = currentLine.substring(8,currentLine.length()-9);
+                currentLine = currentLine.replaceAll("<PLACES>", "");
+                currentLine = currentLine.replaceAll("</PLACES>", "");
                 scene2controller.fillPlaces(currentLine,choosenFile);
             }
             //Second line in txt (<PEOPLE></PEOPLE>)
             else if(lineCounter == 1) {
-                currentLine = currentLine.substring(8,currentLine.length()-9);
+                currentLine = currentLine.replaceAll("<PEOPLE>", "");
+                currentLine = currentLine.replaceAll("</PEOPLE>", "");
                 scene2controller.fillPeople(currentLine,choosenFile);
             }
             //Third line in txt (<TITLE></TITLE>)
             else if(lineCounter == 2) {
-                currentLine = currentLine.substring(7,currentLine.length()-8);
+                currentLine = currentLine.replaceAll("<TITLE>", "");
+                currentLine = currentLine.replaceAll("</TITLE>", "");
                 scene2controller.fillTitle(currentLine,choosenFile);
             }
             //Fourth line in txt (<BODY></BODY>)
             else if(lineCounter == 3 && currentLine.contains("</BODY>")) {
-                currentLine = currentLine.substring(6,currentLine.length()-7);
+                currentLine = currentLine.replaceAll("<BODY>", "");
+                currentLine = currentLine.replaceAll("</BODY>", "");
                 bodyText=bodyText+currentLine+"\n";
                 scene2controller.fillBody(bodyText,choosenFile);
                 break;
@@ -350,7 +366,7 @@ public class Controller {
             //Last line in txt (<BODY>)
             else if (lineCounter >= 3 && !currentLine.contains("</BODY>")) {
                 if (currentLine.contains("<BODY>")) {
-                    currentLine = currentLine.substring(6);
+                    currentLine = currentLine.replaceAll("<BODY>", "");
                 }
                 bodyText=bodyText+currentLine+"\n";
             }
@@ -364,6 +380,73 @@ public class Controller {
         }
         Stage stage = new Stage();
         stage.setScene(new Scene(root));
+        stage.initOwner(Main.primaryStage);
+        stage.show();
+    }
+
+    public void DisplayArticles2(String fmxl, String choosenFile) throws IOException {
+
+        File file = new File(choosenFile);
+
+        FXMLLoader loader = new FXMLLoader(getClass().getResource(fmxl));
+        Parent root = loader.load();
+        Controller3 scene3controller = loader.getController();
+
+        //index file contents
+        BufferedReader br = new BufferedReader(new FileReader(file));
+        String currentLine = "";
+        String bodyText = "";
+
+        int lineCounter = 0;
+        while ((currentLine = br.readLine()) != null) {
+
+            currentLine = currentLine.toString();
+
+            //Tags Removal
+            //Supposing that <PLACES></PLACES>, <PEOPLE></PEOPLE>, <TITLE></TITLE> are one line each
+            //First line in txt (<PLACES></PLACES>)
+            if(lineCounter == 0 && !currentLine.equals("")) {
+                currentLine = currentLine.replaceAll("<PLACES>", "");
+                currentLine = currentLine.replaceAll("</PLACES>", "");
+                scene3controller.fillArticle(currentLine+"\n"+"\n",currentLine);
+            }
+            //Second line in txt (<PEOPLE></PEOPLE>)
+            else if(lineCounter == 1 && !currentLine.equals("")) {
+                currentLine = currentLine.replaceAll("<PEOPLE>", "");
+                currentLine = currentLine.replaceAll("</PEOPLE>", "");
+                scene3controller.fillArticle(currentLine+"\n"+"\n",currentLine);
+            }
+            //Third line in txt (<TITLE></TITLE>)
+            else if(lineCounter == 2 && !currentLine.equals("")) {
+                currentLine = currentLine.replaceAll("<TITLE>", "");
+                currentLine = currentLine.replaceAll("</TITLE>", "");
+                scene3controller.fillArticle(currentLine+"\n"+"\n",currentLine);
+            }
+            //Fourth line in txt (<BODY></BODY>)
+            else if(lineCounter == 3 && currentLine.contains("</BODY>")) {
+                currentLine = currentLine.replaceAll("<BODY>", "");
+                currentLine = currentLine.replaceAll("</BODY>", "");
+                bodyText=bodyText+currentLine+"\n";
+                scene3controller.fillArticle(bodyText,"");
+                break;
+            }
+            //Last line in txt (<BODY>)
+            else if (lineCounter >= 3 && !currentLine.contains("</BODY>")) {
+                if (currentLine.contains("<BODY>")) {
+                    currentLine = currentLine.replaceAll("<BODY>", "");
+                }
+                bodyText=bodyText+currentLine+"\n";
+            }
+            //Last line in txt (</BODY>)
+            else if (currentLine.contains("\u0003</BODY>")) {
+                scene3controller.fillArticle(bodyText,"");
+                break;
+            }
+            lineCounter++;
+        }
+        Stage stage = new Stage();
+        stage.setScene(new Scene(root));
+        stage.initOwner(Main.primaryStage);
         stage.show();
     }
 }
